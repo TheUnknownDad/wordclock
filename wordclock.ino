@@ -21,7 +21,7 @@ FASTLED_USING_NAMESPACE
 const char compiletime[] = __TIME__;
 const char compiledate[] = __DATE__;
 
-// Compiler Setup WeMos D1 R2 6 mini, 80Mhz, 4M (1MB SPIFFS), 230400
+// Compiler Setup WeMos D1 R2 & mini, 80Mhz, 4M (1MB SPIFFS), 230400
 #define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef DEBUG    //Macros are usually in all capital letters.
   #define DPRINT(...)    Serial.print(__VA_ARGS__)     //DPRINT is a macro, debug print
