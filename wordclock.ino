@@ -1,3 +1,4 @@
+// Compiler Setup WeMos D1 R2 & mini, 80Mhz, 4M (1MB SPIFFS), 230400
 #include <FS.h>                   //this needs to be first, or it all crashes and burns...
 #define FASTLED_ALLOW_INTERRUPTS 0
 #define FASTLED_ESP8266_D1_PIN_ORDER
@@ -20,8 +21,8 @@ FASTLED_USING_NAMESPACE
 
 const char compiletime[] = __TIME__;
 const char compiledate[] = __DATE__;
+#define SW_VERSION "1.0.9"
 
-// Compiler Setup WeMos D1 R2 & mini, 80Mhz, 4M (1MB SPIFFS), 230400
 #define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef DEBUG    //Macros are usually in all capital letters.
   #define DPRINT(...)    Serial.print(__VA_ARGS__)     //DPRINT is a macro, debug print
@@ -330,7 +331,14 @@ void setup() {
   // Open serial communications and wait for port to open
   #ifdef DEBUG
   Serial.begin(57600);
-  #endif
+  #endif 
+  DPRINTLN(F("wordclock by TheUnknownDad."));
+  DPRINT(F("version "));
+  DPRINTLN(SW_VERSION);
+  DPRINT(F("compiled "));
+  DPRINT(compiledate);
+  DPRINT(F(" at "));
+  DPRINTLN(compiletime);
   DPRINTLN(F("starting..."));
 
   // pin setup
