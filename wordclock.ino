@@ -1,3 +1,4 @@
+// Compiler Setup WeMos D1 R2 & mini, 80Mhz, 4M (1MB SPIFFS), 230400
 #include <FS.h>                   //this needs to be first, or it all crashes and burns...
 #define FASTLED_ALLOW_INTERRUPTS 0
 #define FASTLED_ESP8266_D1_PIN_ORDER
@@ -20,8 +21,8 @@ FASTLED_USING_NAMESPACE
 
 const char compiletime[] = __TIME__;
 const char compiledate[] = __DATE__;
+#define SW_VERSION "1.0.10"
 
-// Compiler Setup WeMos D1 R2 6 mini, 80Mhz, 4M (1MB SPIFFS), 230400
 #define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef DEBUG    //Macros are usually in all capital letters.
   #define DPRINT(...)    Serial.print(__VA_ARGS__)     //DPRINT is a macro, debug print
@@ -70,6 +71,8 @@ time_t utc, local;
 #define NUM_LEDS    110
 CRGB leds[NUM_LEDS];
 CRGB activeColor;
+CRGB lastColor;
+CRGB fadeColor;
 
 #define LED_BRIGHTNESS      255
 #define FRAMES_PER_SECOND   30
@@ -109,11 +112,17 @@ CRGB activeColor;
 int led_segment_pos[LED_SEGMENTS] =    { 9,22,11, 0,51,40,55,33,55,99,93,62,44,77,84,47,102,66,88,73, 5,29,15,107,36,59,70};
 int led_segment_length[LED_SEGMENTS] = { 2, 7, 4, 4, 4, 4, 3, 3, 4, 4, 6, 4, 4, 5, 4, 3,  4, 4, 5, 4, 3, 4, 7,  3, 4, 2, 3};
 int led_max_power_milliamp = LED_MAX_POWER_MILLIAMP;
+unsigned long led_segment_state = 0;
+unsigned long led_segment_last_state = 0;
 
 // menu und animation definitions and variables
 bool show_clock = true;
 bool show_effect_breathe = true;
 bool show_effect_colorchange = true;
+bool show_effect_smooth_fade = true;
+int effect_smooth_fade_time_ms = 5000;
+long effect_smooth_fade_start = 0;
+byte effect_smooth_fade_fader = 0;
 long effect_time = 0;
 int effect_breathe_breathe_out_time_ms = 1500;
 int effect_breathe_breathe_in_time_ms = 2500;
@@ -330,7 +339,14 @@ void setup() {
   // Open serial communications and wait for port to open
   #ifdef DEBUG
   Serial.begin(57600);
-  #endif
+  #endif 
+  DPRINTLN(F("wordclock by TheUnknownDad."));
+  DPRINT(F("version "));
+  DPRINTLN(SW_VERSION);
+  DPRINT(F("compiled "));
+  DPRINT(compiledate);
+  DPRINT(F(" at "));
+  DPRINTLN(compiletime);
   DPRINTLN(F("starting..."));
 
   // pin setup
@@ -387,12 +403,24 @@ void draw_pixel_add(int x, CRGB col) {
   }
 }
 
-void draw_segment(int segment) {
+void draw_segment_leds(int segment) {
   if ((segment>=0) && (segment<LED_SEGMENTS)) {
     for (int x = 0; x < led_segment_length[segment]; x++) {
-      draw_pixel(x + led_segment_pos[segment], activeColor);
+      draw_pixel_add(x + led_segment_pos[segment], activeColor);
     }
   }  
+}
+
+void draw_segment(int segment) {
+  bitSet(led_segment_state, segment);
+}
+
+void draw_segments(unsigned long segments) {
+  for (int i=0; i<LED_SEGMENTS; i++) {
+    if (bitRead(segments, i)) {
+      draw_segment_leds(i);
+    }
+  }
 }
 
 void digitalClockDisplay(time_t l) {
@@ -607,7 +635,7 @@ void functionToggleOTA() {
     ArduinoOTA.onStart([]() { // starting upgrade
       clear_all();
       activeColor = CRGB::Green;
-      draw_segment(LED_SEGMENT_WIFI);
+      draw_segment_leds(LED_SEGMENT_WIFI);
       FastLED.setBrightness(led_brightness);
       FastLED.show();
       ota_in_progress = true;
@@ -616,11 +644,11 @@ void functionToggleOTA() {
     ArduinoOTA.onEnd([]() { // ending upgrade
       for (int a = 0; a<5; a++) { 
         activeColor = CRGB::Black;
-        draw_segment(LED_SEGMENT_WIFI);
+        draw_segment_leds(LED_SEGMENT_WIFI);
         FastLED.show();
         delay(500);
         activeColor = CRGB::Green;
-        draw_segment(LED_SEGMENT_WIFI);
+        draw_segment_leds(LED_SEGMENT_WIFI);
         FastLED.show();
         delay(500);
       }
@@ -639,11 +667,11 @@ void functionToggleOTA() {
       else if (error == OTA_END_ERROR) Serial.println("End Failed");
       for (int a = 0; a<5; a++) { 
         activeColor = CRGB::Black;
-        draw_segment(LED_SEGMENT_WIFI);
+        draw_segment_leds(LED_SEGMENT_WIFI);
         FastLED.show();
         delay(500);
         activeColor = CRGB::Red;
-        draw_segment(LED_SEGMENT_WIFI);
+        draw_segment_leds(LED_SEGMENT_WIFI);
         FastLED.show();
         delay(500);
       }
@@ -664,7 +692,7 @@ void startFunction(byte func) {
   if (func == FN_SETUP_AP) {
     clear_all();
     activeColor = CRGB::Red;
-    draw_segment(LED_SEGMENT_WIFI);
+    draw_segment_leds(LED_SEGMENT_WIFI);
     FastLED.setBrightness(led_brightness);
     FastLED.show();
     functionSetupAP();
@@ -707,18 +735,18 @@ void loop() {
   }
   if (show_ota_message>effect_time) {
     activeColor = CRGB::Yellow;
-    draw_segment(LED_SEGMENT_WIFI);
+    draw_segment_leds(LED_SEGMENT_WIFI);
     if (ota_mode == OTA_ACTIVE) {
-      draw_segment(LED_SEGMENT_AN);
+      draw_segment_leds(LED_SEGMENT_AN);
     } else {
-      draw_segment(LED_SEGMENT_AUS);      
+      draw_segment_leds(LED_SEGMENT_AUS);      
     }
   }
 
 
   // effect handling
   gHue++;
-  if (millis()>next_frame) {
+  if (effect_time>next_frame) {
     if (! ota_in_progress) {
       if (show_effect_breathe) {
         if (effect_time > effect_breathe_next_phase) {
@@ -732,11 +760,11 @@ void loop() {
             effect_breathe_next_phase = effect_time + effect_breathe_breathe_out_time_ms;
           }
         }
-        if (effect_breathe_phase == 1) {
+        if (effect_breathe_phase == 0) {
           led_brightness = LED_BRIGHTNESS;
-        } else if (effect_breathe_phase == 0) {
-          led_brightness = LED_BRIGHTNESS * (effect_time-effect_breathe_this_phase)/(effect_breathe_next_phase - effect_breathe_this_phase) + effect_breathe_relative_brightness * (effect_breathe_next_phase - effect_time)/(effect_breathe_next_phase - effect_breathe_this_phase);
         } else if (effect_breathe_phase == 2) {
+          led_brightness = LED_BRIGHTNESS * (effect_time-effect_breathe_this_phase)/(effect_breathe_next_phase - effect_breathe_this_phase) + effect_breathe_relative_brightness * (effect_breathe_next_phase - effect_time)/(effect_breathe_next_phase - effect_breathe_this_phase);
+        } else if (effect_breathe_phase == 1) {
           led_brightness = effect_breathe_relative_brightness * (effect_time-effect_breathe_this_phase)/(effect_breathe_next_phase - effect_breathe_this_phase) + LED_BRIGHTNESS * (effect_breathe_next_phase - effect_time)/(effect_breathe_next_phase - effect_breathe_this_phase);
         }
     
@@ -754,7 +782,32 @@ void loop() {
         }
       }
       if (show_clock) {
+        led_segment_last_state = led_segment_state;
+        led_segment_state = 0;
         drawWordClockDisplay(local);
+        if ((led_segment_last_state != led_segment_state) && show_effect_smooth_fade) {
+          // smooth fade
+          if (effect_smooth_fade_start == 0) {
+            effect_smooth_fade_start = effect_time;
+            effect_smooth_fade_fader = 0;
+          } else if (effect_time > effect_smooth_fade_start + effect_smooth_fade_time_ms) {
+            effect_smooth_fade_start = 0;
+            effect_smooth_fade_fader = 255;
+          } else {
+            effect_smooth_fade_fader = (effect_time - effect_smooth_fade_start) * 256 / effect_smooth_fade_time_ms;
+          }
+          fadeColor = activeColor;
+          activeColor = lastColor.fadeToBlackBy(effect_smooth_fade_fader);
+          draw_segments(led_segment_last_state);
+          activeColor = fadeColor.fadeToBlackBy(255-effect_smooth_fade_fader);
+          draw_segments(led_segment_state);
+          if (effect_smooth_fade_fader < 255) {
+            led_segment_state = led_segment_last_state;
+          }
+        } else {
+          draw_segments(led_segment_state);
+          lastColor = activeColor;
+        }
       }
       
       // display loop
